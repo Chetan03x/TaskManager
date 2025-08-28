@@ -17,9 +17,79 @@ import {
   Users
 } from 'lucide-react';
 
-// Task reducer for complex state management
+// TaskCard component moved outside main component for clarity
+const TaskCard = ({ task, onToggleComplete, onEdit, onDelete, getPriorityColor, getCategoryColor, isOverdue }) => (
+  <div className={`bg-white rounded-lg shadow-sm border-l-4 p-4 hover:shadow-md transition-shadow ${
+    task.completed ? 'border-green-500 bg-green-50' : 
+    isOverdue(task.dueDate, task.completed) ? 'border-red-500' : 
+    getPriorityColor(task.priority).replace('bg-', 'border-')
+  }`}>
+    <div className="flex items-start justify-between mb-3">
+      <div className="flex items-start space-x-3 flex-1">
+        <button
+          onClick={() => onToggleComplete(task.id)}
+          className="mt-1 flex-shrink-0"
+          aria-label={task.completed ? 'Mark task as incomplete' : 'Mark task as complete'}
+        >
+          {task.completed ? 
+            <CheckCircle className="w-5 h-5 text-green-500" /> : 
+            <Circle className="w-5 h-5 text-gray-400 hover:text-green-500" />
+          }
+        </button>
+        <div className="flex-1">
+          <h3 className={`font-semibold ${task.completed ? 'line-through text-gray-500' : 'text-gray-900'}`}>
+            {task.title}
+          </h3>
+          <p className="text-sm text-gray-600 mt-1">{task.description}</p>
+        </div>
+      </div>
+      
+      <div className="flex items-center space-x-2 ml-4">
+        <button
+          onClick={() => onEdit(task)}
+          className="p-1 text-gray-400 hover:text-blue-500 transition-colors"
+          aria-label="Edit task"
+        >
+          <Edit3 size={14} />
+        </button>
+        <button
+          onClick={() => onDelete(task.id)}
+          className="p-1 text-gray-400 hover:text-red-500 transition-colors"
+          aria-label="Delete task"
+        >
+          <Trash2 size={14} />
+        </button>
+      </div>
+    </div>
+    <div className="flex items-center justify-between text-xs text-gray-500">
+      <div className="flex items-center space-x-3">
+        <span className={`px-2 py-1 rounded-full ${getCategoryColor(task.category)}`}>
+          {task.category}
+        </span>
+        <div className="flex items-center space-x-1">
+          <User size={12} />
+          <span>{task.assignee}</span>
+        </div>
+      </div>
+      
+      <div className="flex items-center space-x-2">
+        {isOverdue(task.dueDate, task.completed) && (
+          <AlertCircle className="w-4 h-4 text-red-500" />
+        )}
+        <Clock size={12} />
+        <span className={isOverdue(task.dueDate, task.completed) ? 'text-red-500 font-medium' : ''}>
+          {new Date(task.dueDate).toLocaleDateString()}
+        </span>
+      </div>
+    </div>
+  </div>
+);
+
+// Task reducer with initial load case added
 const taskReducer = (state, action) => {
   switch (action.type) {
+    case 'LOAD_TASKS':
+      return { ...state, tasks: action.payload };
     case 'ADD_TASK':
       return {
         ...state,
@@ -101,7 +171,7 @@ const TaskManagementDashboard = () => {
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingTask, setEditingTask] = useState(null);
   const [activeView, setActiveView] = useState('board');
-  
+
   // Form state
   const [formData, setFormData] = useState({
     title: '',
@@ -112,8 +182,23 @@ const TaskManagementDashboard = () => {
     dueDate: ''
   });
 
-  // Filter and search logic
-  const filteredTasks = state.tasks.filter(task => {
+  // Note: localStorage functionality removed for Claude.ai compatibility
+  // In a real environment, these useEffects would handle localStorage operations
+
+  // Normalize date for overdue check
+  const isOverdue = (dueDate, completed) => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const due = new Date(dueDate);
+    due.setHours(0, 0, 0, 0);
+    return due < today && !completed;
+  };
+
+  // Sort tasks by dueDate ascending for consistent order
+  const sortedTasks = [...state.tasks].sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
+
+  // Filter and search with sorted tasks
+  const filteredTasks = sortedTasks.filter(task => {
     const matchesSearch = task.title.toLowerCase().includes(state.searchQuery.toLowerCase()) ||
                          task.description.toLowerCase().includes(state.searchQuery.toLowerCase());
     
@@ -121,7 +206,7 @@ const TaskManagementDashboard = () => {
                          (state.filter === 'completed' && task.completed) ||
                          (state.filter === 'pending' && !task.completed) ||
                          (state.filter === 'high' && task.priority === 'high') ||
-                         (state.filter === 'overdue' && new Date(task.dueDate) < new Date() && !task.completed);
+                         (state.filter === 'overdue' && isOverdue(task.dueDate, task.completed));
     
     return matchesSearch && matchesFilter;
   });
@@ -131,13 +216,12 @@ const TaskManagementDashboard = () => {
     total: state.tasks.length,
     completed: state.tasks.filter(t => t.completed).length,
     pending: state.tasks.filter(t => !t.completed).length,
-    overdue: state.tasks.filter(t => new Date(t.dueDate) < new Date() && !t.completed).length,
+    overdue: state.tasks.filter(t => isOverdue(t.dueDate, t.completed)).length,
     completionRate: state.tasks.length > 0 ? Math.round((state.tasks.filter(t => t.completed).length / state.tasks.length) * 100) : 0
   };
 
   const handleSubmit = () => {
     if (!formData.title.trim()) return;
-
     if (editingTask) {
       dispatch({
         type: 'UPDATE_TASK',
@@ -147,7 +231,6 @@ const TaskManagementDashboard = () => {
     } else {
       dispatch({ type: 'ADD_TASK', payload: formData });
     }
-
     setFormData({
       title: '',
       description: '',
@@ -191,75 +274,6 @@ const TaskManagementDashboard = () => {
     }
   };
 
-  const isOverdue = (dueDate, completed) => {
-    return new Date(dueDate) < new Date() && !completed;
-  };
-
-  const TaskCard = ({ task }) => (
-    <div className={`bg-white rounded-lg shadow-sm border-l-4 p-4 hover:shadow-md transition-shadow ${
-      task.completed ? 'border-green-500 bg-green-50' : 
-      isOverdue(task.dueDate, task.completed) ? 'border-red-500' : 
-      getPriorityColor(task.priority).replace('bg-', 'border-')
-    }`}>
-      <div className="flex items-start justify-between mb-3">
-        <div className="flex items-start space-x-3 flex-1">
-          <button
-            onClick={() => dispatch({ type: 'TOGGLE_COMPLETE', payload: task.id })}
-            className="mt-1 flex-shrink-0"
-          >
-            {task.completed ? 
-              <CheckCircle className="w-5 h-5 text-green-500" /> : 
-              <Circle className="w-5 h-5 text-gray-400 hover:text-green-500" />
-            }
-          </button>
-          <div className="flex-1">
-            <h3 className={`font-semibold ${task.completed ? 'line-through text-gray-500' : 'text-gray-900'}`}>
-              {task.title}
-            </h3>
-            <p className="text-sm text-gray-600 mt-1">{task.description}</p>
-          </div>
-        </div>
-        
-        <div className="flex items-center space-x-2 ml-4">
-          <button
-            onClick={() => handleEdit(task)}
-            className="p-1 text-gray-400 hover:text-blue-500 transition-colors"
-          >
-            <Edit3 size={14} />
-          </button>
-          <button
-            onClick={() => dispatch({ type: 'DELETE_TASK', payload: task.id })}
-            className="p-1 text-gray-400 hover:text-red-500 transition-colors"
-          >
-            <Trash2 size={14} />
-          </button>
-        </div>
-      </div>
-
-      <div className="flex items-center justify-between text-xs text-gray-500">
-        <div className="flex items-center space-x-3">
-          <span className={`px-2 py-1 rounded-full ${getCategoryColor(task.category)}`}>
-            {task.category}
-          </span>
-          <div className="flex items-center space-x-1">
-            <User size={12} />
-            <span>{task.assignee}</span>
-          </div>
-        </div>
-        
-        <div className="flex items-center space-x-2">
-          {isOverdue(task.dueDate, task.completed) && (
-            <AlertCircle className="w-4 h-4 text-red-500" />
-          )}
-          <Clock size={12} />
-          <span className={isOverdue(task.dueDate, task.completed) ? 'text-red-500 font-medium' : ''}>
-            {new Date(task.dueDate).toLocaleDateString()}
-          </span>
-        </div>
-      </div>
-    </div>
-  );
-
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
@@ -296,7 +310,6 @@ const TaskManagementDashboard = () => {
           </div>
         </div>
       </header>
-
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {activeView === 'board' ? (
           <>
@@ -350,7 +363,6 @@ const TaskManagementDashboard = () => {
                 </div>
               </div>
             </div>
-
             {/* Controls */}
             <div className="flex flex-col sm:flex-row gap-4 mb-8">
               <div className="flex-1 relative">
@@ -386,12 +398,20 @@ const TaskManagementDashboard = () => {
                 </button>
               </div>
             </div>
-
             {/* Task Grid */}
             <div className="grid gap-4">
               {filteredTasks.length > 0 ? (
                 filteredTasks.map(task => (
-                  <TaskCard key={task.id} task={task} />
+                  <TaskCard
+                    key={task.id}
+                    task={task}
+                    onToggleComplete={(id) => dispatch({ type: 'TOGGLE_COMPLETE', payload: id })}
+                    onEdit={handleEdit}
+                    onDelete={(id) => dispatch({ type: 'DELETE_TASK', payload: id })}
+                    getPriorityColor={getPriorityColor}
+                    getCategoryColor={getCategoryColor}
+                    isOverdue={isOverdue}
+                  />
                 ))
               ) : (
                 <div className="text-center py-12">
@@ -438,7 +458,6 @@ const TaskManagementDashboard = () => {
                 </div>
               </div>
             </div>
-
             {/* Category Breakdown */}
             <div className="bg-white rounded-lg shadow-sm p-6">
               <h3 className="text-lg font-semibold text-gray-900 mb-4">Tasks by Category</h3>
@@ -464,7 +483,6 @@ const TaskManagementDashboard = () => {
                 ))}
               </div>
             </div>
-
             {/* Recent Activity */}
             <div className="bg-white rounded-lg shadow-sm p-6">
               <h3 className="text-lg font-semibold text-gray-900 mb-4">Recent Activity</h3>
@@ -489,7 +507,6 @@ const TaskManagementDashboard = () => {
           </div>
         )}
       </div>
-
       {/* Add/Edit Task Modal */}
       {showAddForm && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
@@ -511,6 +528,7 @@ const TaskManagementDashboard = () => {
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   value={formData.title}
                   onChange={(e) => setFormData({...formData, title: e.target.value})}
+                  onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
                 />
               </div>
               
